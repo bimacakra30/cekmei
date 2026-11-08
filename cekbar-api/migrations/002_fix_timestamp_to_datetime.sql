@@ -1,13 +1,4 @@
 -- Fix: convert all TIMESTAMP columns to DATETIME for sqlx compatibility
--- Also adds missing columns and updates enum values
-
--- orders: add missing columns (safe with IF NOT EXISTS logic via IGNORE)
-ALTER TABLE orders ADD COLUMN IF NOT EXISTS processed_at DATETIME NULL;
-ALTER TABLE orders ADD COLUMN IF NOT EXISTS is_direct_order TINYINT(1) NOT NULL DEFAULT 0;
-ALTER TABLE orders ADD COLUMN IF NOT EXISTS processed_by INT NULL;
-ALTER TABLE orders ADD COLUMN IF NOT EXISTS admin_note TEXT NULL;
-ALTER TABLE orders ADD COLUMN IF NOT EXISTS is_manual_order TINYINT(1) NOT NULL DEFAULT 0;
-ALTER TABLE orders ADD COLUMN IF NOT EXISTS confirmed_at DATETIME NULL;
 
 -- orders: TIMESTAMP → DATETIME
 ALTER TABLE orders
@@ -50,4 +41,3 @@ ALTER TABLE password_resets
 ALTER TABLE email_verifications
   MODIFY expires_at DATETIME NOT NULL,
   MODIFY created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP;
-

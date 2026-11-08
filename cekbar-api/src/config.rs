@@ -27,6 +27,7 @@ pub struct AppConfig {
     // Telegram
     pub telegram_bot_token: String,
     pub telegram_chat_id: String,
+    pub telegram_webhook_secret: String,
 }
 
 impl AppConfig {
@@ -54,6 +55,7 @@ impl AppConfig {
 
             telegram_bot_token: env_or("TELEGRAM_BOT_TOKEN", ""),
             telegram_chat_id: env_or("TELEGRAM_CHAT_ID", ""),
+            telegram_webhook_secret: env_or("TELEGRAM_WEBHOOK_SECRET", "cekbar_tg_webhook_secret_2026"),
         }
     }
 }

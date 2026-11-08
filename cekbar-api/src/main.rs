@@ -91,9 +91,10 @@ async fn main() {
     // Set Telegram webhook
     if state.telegram.is_configured() {
         let webhook_url = format!("{}/api/webhooks/telegram", state.config.app_url.trim_end_matches('/'));
+        let secret = state.config.telegram_webhook_secret.clone();
         let tg = state.telegram.clone();
         tokio::spawn(async move {
-            if let Err(e) = tg.set_webhook(&webhook_url).await {
+            if let Err(e) = tg.set_webhook_with_secret(&webhook_url, &secret).await {
                 tracing::error!("Failed to set Telegram webhook: {}", e);
             }
         });

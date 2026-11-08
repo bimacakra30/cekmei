@@ -183,15 +183,24 @@ impl TelegramNotifier {
     }
 
     pub async fn set_webhook(&self, webhook_url: &str) -> Result<(), String> {
+        self.set_webhook_with_secret(webhook_url, "").await
+    }
+
+    pub async fn set_webhook_with_secret(&self, webhook_url: &str, secret_token: &str) -> Result<(), String> {
         let url = format!(
             "https://api.telegram.org/bot{}/setWebhook",
             self.bot_token
         );
 
+        let mut body = json!({ "url": webhook_url });
+        if !secret_token.is_empty() {
+            body["secret_token"] = json!(secret_token);
+        }
+
         let res = self
             .client
             .post(&url)
-            .json(&json!({ "url": webhook_url }))
+            .json(&body)
             .send()
             .await
             .map_err(|e| format!("Set webhook failed: {}", e))?;

@@ -265,12 +265,36 @@ async fn ceir(
 
 async fn telegram_webhook(
     State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
     Json(update): Json<crate::services::telegram::TelegramUpdate>,
 ) -> AppResult<Json<serde_json::Value>> {
+    // Verify secret token from Telegram
+    let expected_secret = &state.config.telegram_webhook_secret;
+    if !expected_secret.is_empty() {
+        let header_secret = headers
+            .get("x-telegram-bot-api-secret-token")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+        if header_secret != expected_secret {
+            tracing::warn!("Telegram webhook: invalid secret token");
+            return Ok(Json(json!({ "ok": true })));
+        }
+    }
+
     let cb = match update.callback_query {
         Some(cb) => cb,
         None => return Ok(Json(json!({ "ok": true }))),
     };
+
+    // Verify sender is authorized admin
+    let allowed_chat_id: i64 = state.config.telegram_chat_id.parse().unwrap_or(0);
+    if let Some(ref msg) = cb.message {
+        if msg.chat.id != allowed_chat_id {
+            tracing::warn!("Telegram webhook: unauthorized chat_id {}", msg.chat.id);
+            let _ = state.telegram.answer_callback(&cb.id, "⛔ Tidak diizinkan").await;
+            return Ok(Json(json!({ "ok": true })));
+        }
+    }
 
     let data = cb.data.unwrap_or_default();
     let msg = cb.message.as_ref();

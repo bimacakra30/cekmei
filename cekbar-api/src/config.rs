@@ -23,6 +23,10 @@ pub struct AppConfig {
 
     // Cron
     pub cron_secret: Option<String>,
+
+    // Telegram
+    pub telegram_bot_token: String,
+    pub telegram_chat_id: String,
 }
 
 impl AppConfig {
@@ -47,6 +51,9 @@ impl AppConfig {
             smtp_from: env_required("SMTP_FROM"),
 
             cron_secret: std::env::var("CRON_SECRET").ok(),
+
+            telegram_bot_token: env_or("TELEGRAM_BOT_TOKEN", ""),
+            telegram_chat_id: env_or("TELEGRAM_CHAT_ID", ""),
         }
     }
 }

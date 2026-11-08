@@ -21,6 +21,7 @@ use middleware::rate_limit::RateLimiter;
 use services::ceirid_client::CeiridClient;
 use services::gopay_client::GopayClient;
 use services::mailer::Mailer;
+use services::telegram::TelegramNotifier;
 
 pub struct AppState {
     pub db: sqlx::MySqlPool,
@@ -28,6 +29,7 @@ pub struct AppState {
     pub mailer: Mailer,
     pub ceirid: CeiridClient,
     pub gopay: GopayClient,
+    pub telegram: TelegramNotifier,
 
     // Rate limiters
     pub login_limiter: RateLimiter,
@@ -62,12 +64,14 @@ async fn main() {
     let mailer = Mailer::new(&config);
     let ceirid = CeiridClient::new(&config);
     let gopay = GopayClient::new(&config);
+    let telegram = TelegramNotifier::new(&config.telegram_bot_token, &config.telegram_chat_id);
 
     let state = Arc::new(AppState {
         db: pool.clone(),
         mailer,
         ceirid,
         gopay,
+        telegram,
 
         // 100 per 15 min (relaxed for dev/testing)
         login_limiter: RateLimiter::new(100, Duration::from_secs(15 * 60)),

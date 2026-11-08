@@ -48,6 +48,36 @@ pub async fn process_order_after_payment(
         .execute(&state.db)
         .await?;
         tracing::info!("[ProcessOrder] Order {}: manual order, queued for admin", order_id);
+
+        // Telegram notification
+        let user_info: Option<(String,)> = sqlx::query_as(
+            "SELECT u.username FROM orders o JOIN users u ON u.id = o.user_id WHERE o.order_id = ? LIMIT 1"
+        )
+        .bind(order_id)
+        .fetch_optional(&state.db)
+        .await
+        .unwrap_or(None);
+
+        let username = user_info.map(|u| u.0).unwrap_or_else(|| "Unknown".into());
+        let imei_list: Vec<String> = serde_json::from_str(&order.imei_list).unwrap_or_default();
+
+        let total_price: f64 = sqlx::query_as::<_, (String,)>(
+            "SELECT CAST(total_price AS CHAR) FROM orders WHERE order_id = ?"
+        )
+        .bind(order_id)
+        .fetch_optional(&state.db)
+        .await
+        .unwrap_or(None)
+        .map(|r| r.0.parse().unwrap_or(0.0))
+        .unwrap_or(0.0);
+
+        let tg = state.telegram.clone();
+        let oid = order_id.to_string();
+        let sname = order.service_name.clone();
+        tokio::spawn(async move {
+            tg.notify_manual_order(&oid, &username, &sname, &imei_list, total_price).await;
+        });
+
         return Ok(());
     }
 

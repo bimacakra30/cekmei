@@ -1,0 +1,32 @@
+services:
+  # ── Backend API (Rust/Axum) ─────────────────────────────────────────
+  cekbar-api:
+    build:
+      context: ./cekbar-api
+      dockerfile: Dockerfile
+    container_name: cekbar-api
+    restart: unless-stopped
+    env_file:
+      - ./cekbar-api/.env
+    expose:
+      - "8080"
+    networks:
+      - cekbar-net
+
+  # ── Frontend (React/Nginx) ──────────────────────────────────────────
+  cekbar-frontend:
+    build:
+      context: ./cekbar-frontend
+      dockerfile: Dockerfile
+    container_name: cekbar-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      - cekbar-api
+    networks:
+      - cekbar-net
+
+networks:
+  cekbar-net:
+    driver: bridge

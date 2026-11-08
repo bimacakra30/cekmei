@@ -1,0 +1,246 @@
+@import "tailwindcss";
+
+/* ── Tailwind v4: dark mode via .dark class (next-themes) ──
+   Tanpa ini, dark: prefix pakai @media prefers-color-scheme
+   dan tidak merespons class .dark dari next-themes */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ============================================
+   BARA SYSTEM — Design System
+   Gradient biru profesional sebagai aksen utama
+   ============================================ */
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+
+  /* Brand colors — gradient blue profesional */
+  --color-brand-light: #3B82F6;
+  --color-brand-primary: #1D4ED8;
+  --color-brand-gradient-start: #3B82F6;
+  --color-brand-gradient-end: #1D4ED8;
+
+  /* Legacy aliases (backward compatibility) */
+  --color-brand-pink: #3B82F6;
+  --color-brand-purple: #1D4ED8;
+
+  /* Status colors */
+  --color-status-online: #22C55E;
+  --color-status-success: #22C55E;
+  --color-status-warning: #F59E0B;
+  --color-status-error: #EF4444;
+  --color-status-processing: #3B82F6;
+
+  /* Sidebar */
+  --color-sidebar-bg: var(--sidebar-bg);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-muted: var(--sidebar-muted);
+  --color-sidebar-active: var(--sidebar-active);
+  --color-sidebar-border: var(--sidebar-border);
+
+  /* Font */
+  --font-sans: var(--font-inter);
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+/* ---- Light Mode ---- */
+:root {
+  --background: #F8F9FC;
+  --foreground: #1A1A2E;
+  --card: #FFFFFF;
+  --card-foreground: #1A1A2E;
+  --muted: #F1F5F9;
+  --muted-foreground: #64748B;
+  --border: #E2E8F0;
+  --input: #E2E8F0;
+  --sidebar-bg: #FFFFFF;
+  --sidebar-foreground: #334155;
+  --sidebar-muted: #94A3B8;
+  --sidebar-active: linear-gradient(135deg, #3B82F6 0%, #1D4ED8 100%);
+  --sidebar-border: #F1F5F9;
+}
+
+/* ---- Dark Mode ---- */
+.dark {
+  --background: #0F1117;
+  --foreground: #E2E8F0;
+  --card: #181B25;
+  --card-foreground: #E2E8F0;
+  --muted: #1E2130;
+  --muted-foreground: #94A3B8;
+  --border: #262937;
+  --input: #262937;
+  --sidebar-bg: #13151E;
+  --sidebar-foreground: #CBD5E1;
+  --sidebar-muted: #64748B;
+  --sidebar-active: linear-gradient(135deg, #3B82F6 0%, #1D4ED8 100%);
+  --sidebar-border: #1E2130;
+}
+
+/* ============================================
+   Base Styles
+   ============================================ */
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans, system-ui, -apple-system, sans-serif);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ============================================
+   Custom Scrollbar
+   ============================================ */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--muted-foreground);
+  border-radius: 999px;
+  opacity: 0.3;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  opacity: 0.6;
+}
+
+/* ============================================
+   Animations
+   ============================================ */
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+@keyframes spin-slow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slide-in-left {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
+}
+
+@keyframes slide-out-left {
+  from { transform: translateX(0); }
+  to { transform: translateX(-100%); }
+}
+
+@keyframes slide-in-right {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+.animate-skeleton {
+  animation: skeleton-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.animate-spin-slow {
+  animation: spin-slow 2s linear infinite;
+}
+
+.animate-fade-in {
+  animation: fade-in 0.3s ease-out forwards;
+}
+
+.animate-slide-in {
+  animation: slide-in-left 0.3s ease-out forwards;
+}
+
+.animate-slide-out {
+  animation: slide-out-left 0.3s ease-out forwards;
+}
+
+.animate-slide-in-right {
+  animation: slide-in-right 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* ============================================
+   Gradient Utilities
+   ============================================ */
+.gradient-brand {
+  background: linear-gradient(135deg, #3B82F6 0%, #1D4ED8 100%);
+}
+
+.gradient-brand-text {
+  background: linear-gradient(135deg, #3B82F6 0%, #1D4ED8 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ============================================
+   Card hover effect
+   ============================================ */
+.card-hover {
+  transition: all 0.2s ease;
+}
+.card-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px -5px rgba(0, 0, 0, 0.1), 0 4px 10px -5px rgba(0, 0, 0, 0.04);
+}
+.dark .card-hover:hover {
+  box-shadow: 0 8px 25px -5px rgba(0, 0, 0, 0.3), 0 4px 10px -5px rgba(0, 0, 0, 0.2);
+}
+
+/* ============================================
+   Sidebar scrollbar (dark background)
+   ============================================ */
+.sidebar-scroll::-webkit-scrollbar {
+  width: 4px;
+}
+
+.sidebar-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sidebar-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+}
+
+.sidebar-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* ============================================
+   QRIS Scan Animation
+   ============================================ */
+@keyframes qris-scan {
+  0% {
+    transform: translateY(0);
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  90% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(256px);
+    opacity: 0;
+  }
+}
+
+.animate-qris-scan {
+  animation: qris-scan 2.5s ease-in-out infinite;
+}

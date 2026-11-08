@@ -88,6 +88,17 @@ async fn main() {
     // Spawn background cron tasks
     handlers::cron::spawn_cron_tasks(state.clone());
 
+    // Set Telegram webhook
+    if state.telegram.is_configured() {
+        let webhook_url = format!("{}/api/webhooks/telegram", state.config.app_url.trim_end_matches('/'));
+        let tg = state.telegram.clone();
+        tokio::spawn(async move {
+            if let Err(e) = tg.set_webhook(&webhook_url).await {
+                tracing::error!("Failed to set Telegram webhook: {}", e);
+            }
+        });
+    }
+
     let cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods(Any)

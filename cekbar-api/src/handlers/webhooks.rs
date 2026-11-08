@@ -16,6 +16,7 @@ pub fn router() -> Router<Arc<AppState>> {
     Router::new()
         .route("/gopay", post(gopay))
         .route("/ceir", post(ceir))
+        .route("/telegram", post(telegram_webhook))
 }
 
 // ── GoPay Webhook ──────────────────────────────────────────────────────
@@ -256,6 +257,161 @@ async fn ceir(
     }
 
     tracing::info!("CEIR webhook: order {} updated to {} — {}", local_order_id, db_status, status_note);
+
+    Ok(Json(json!({ "ok": true })))
+}
+
+// ── Telegram Webhook ───────────────────────────────────────────────────
+
+async fn telegram_webhook(
+    State(state): State<Arc<AppState>>,
+    Json(update): Json<crate::services::telegram::TelegramUpdate>,
+) -> AppResult<Json<serde_json::Value>> {
+    let cb = match update.callback_query {
+        Some(cb) => cb,
+        None => return Ok(Json(json!({ "ok": true }))),
+    };
+
+    let data = cb.data.unwrap_or_default();
+    let msg = cb.message.as_ref();
+
+    let parts: Vec<&str> = data.splitn(2, ':').collect();
+    if parts.len() != 2 {
+        let _ = state.telegram.answer_callback(&cb.id, "Data tidak valid").await;
+        return Ok(Json(json!({ "ok": true })));
+    }
+
+    let action = parts[0];
+    let order_id = parts[1];
+
+    // Verify order exists and is manual
+    let row: Option<(String, String, bool, String, String)> = sqlx::query_as(
+        "SELECT o.order_id, o.status, o.is_manual_order, o.service_name, u.username \
+         FROM orders o JOIN users u ON u.id = o.user_id WHERE o.order_id = ? LIMIT 1"
+    )
+    .bind(order_id)
+    .fetch_optional(&state.db)
+    .await?;
+
+    let (oid, current_status, is_manual, service_name, username) = match row {
+        Some(r) => r,
+        None => {
+            let _ = state.telegram.answer_callback(&cb.id, "Order tidak ditemukan").await;
+            return Ok(Json(json!({ "ok": true })));
+        }
+    };
+
+    if !is_manual {
+        let _ = state.telegram.answer_callback(&cb.id, "Bukan order manual").await;
+        return Ok(Json(json!({ "ok": true })));
+    }
+
+    let now = chrono::Utc::now().naive_utc();
+
+    match action {
+        "process" => {
+            if current_status != "PENDING" {
+                let _ = state.telegram.answer_callback(&cb.id, &format!("Status sudah {}", current_status)).await;
+                return Ok(Json(json!({ "ok": true })));
+            }
+
+            sqlx::query(
+                "UPDATE orders SET status = 'PROCESSING', status_note = 'Sedang diproses oleh admin', processed_at = ? WHERE order_id = ?"
+            )
+            .bind(now)
+            .bind(&oid)
+            .execute(&state.db)
+            .await?;
+
+            let _ = state.telegram.answer_callback(&cb.id, "✅ Order diproses").await;
+
+            // Update message with new buttons
+            if let Some(m) = msg {
+                let text = format!(
+                    "🔄 <b>Order Sedang Diproses</b>\n\n\
+                     📋 Order ID: <code>{}</code>\n\
+                     👤 User: <b>{}</b>\n\
+                     🛠 Layanan: {}\n\n\
+                     ⚙️ Status: <b>PROCESSING</b>",
+                    oid, username, service_name
+                );
+
+                let buttons = vec![vec![
+                    crate::services::telegram::InlineButton {
+                        text: "✅ Selesai".into(),
+                        callback_data: format!("success:{}", oid),
+                    },
+                    crate::services::telegram::InlineButton {
+                        text: "❌ Gagal".into(),
+                        callback_data: format!("fail:{}", oid),
+                    },
+                ]];
+
+                let _ = state.telegram.edit_message(
+                    m.chat.id, m.message_id, &text, Some(buttons)
+                ).await;
+            }
+        }
+        "success" => {
+            if current_status != "PROCESSING" {
+                let _ = state.telegram.answer_callback(&cb.id, &format!("Status sudah {}", current_status)).await;
+                return Ok(Json(json!({ "ok": true })));
+            }
+
+            sqlx::query(
+                "UPDATE orders SET status = 'SUCCESS', status_note = 'Pesanan selesai diproses', completed_at = ? WHERE order_id = ?"
+            )
+            .bind(now)
+            .bind(&oid)
+            .execute(&state.db)
+            .await?;
+
+            let _ = state.telegram.answer_callback(&cb.id, "✅ Order selesai").await;
+
+            if let Some(m) = msg {
+                let text = format!(
+                    "✅ <b>Order Selesai</b>\n\n\
+                     📋 Order ID: <code>{}</code>\n\
+                     👤 User: <b>{}</b>\n\
+                     🛠 Layanan: {}\n\n\
+                     🎉 Status: <b>SUCCESS</b>",
+                    oid, username, service_name
+                );
+                let _ = state.telegram.edit_message(m.chat.id, m.message_id, &text, None).await;
+            }
+        }
+        "fail" => {
+            if current_status == "SUCCESS" || current_status == "FAILED" {
+                let _ = state.telegram.answer_callback(&cb.id, &format!("Status sudah {}", current_status)).await;
+                return Ok(Json(json!({ "ok": true })));
+            }
+
+            sqlx::query(
+                "UPDATE orders SET status = 'FAILED', status_note = 'Pesanan gagal diproses', completed_at = ? WHERE order_id = ?"
+            )
+            .bind(now)
+            .bind(&oid)
+            .execute(&state.db)
+            .await?;
+
+            let _ = state.telegram.answer_callback(&cb.id, "❌ Order ditandai gagal").await;
+
+            if let Some(m) = msg {
+                let text = format!(
+                    "❌ <b>Order Gagal</b>\n\n\
+                     📋 Order ID: <code>{}</code>\n\
+                     👤 User: <b>{}</b>\n\
+                     🛠 Layanan: {}\n\n\
+                     💔 Status: <b>FAILED</b>",
+                    oid, username, service_name
+                );
+                let _ = state.telegram.edit_message(m.chat.id, m.message_id, &text, None).await;
+            }
+        }
+        _ => {
+            let _ = state.telegram.answer_callback(&cb.id, "Aksi tidak dikenal").await;
+        }
+    }
 
     Ok(Json(json!({ "ok": true })))
 }

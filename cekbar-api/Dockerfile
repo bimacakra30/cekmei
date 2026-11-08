@@ -4,7 +4,7 @@ FROM rust:latest AS builder
 WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
 # Cache deps
-RUN mkdir src && echo "fn main(){}" > src/main.rs && cargo build --release && rm -rf src
+RUN mkdir src && echo "fn main(){}" > src/main.rs && cargo build --release && rm -rf src target/release/cekbar-api target/release/deps/cekbar_api*
 
 COPY src ./src
 COPY migrations ./migrations

@@ -15,6 +15,8 @@ import {
   Trash2,
   Plus,
   Pencil,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { DeleteConfirmModal } from "./delete-confirm-modal";
 import { ServiceFormDrawer } from "./service-form-drawer";
@@ -79,12 +81,21 @@ export default function AdminLayananPage() {
   const [formSaving, setFormSaving] = useState(false);
   const [groupInputMode, setGroupInputMode] = useState<"select" | "custom">("select");
 
+  const [currentPage, setCurrentPage] = useState(1);
+  const [perPage, setPerPage] = useState(10);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalServices, setTotalServices] = useState(0);
+  const [activeCount, setActiveCount] = useState(0);
+  const [inactiveCount, setInactiveCount] = useState(0);
+
   const fetchServices = useCallback(async () => {
     try {
       setLoading(true);
       const params = new URLSearchParams();
       if (filterGroup !== "ALL") params.set("group", filterGroup);
       if (searchQuery) params.set("search", searchQuery);
+      params.set("page", String(currentPage));
+      params.set("limit", String(perPage));
 
       const res = await fetch(`/api/admin/services?${params.toString()}`);
       const data = await res.json();
@@ -92,13 +103,19 @@ export default function AdminLayananPage() {
       if (res.ok) {
         setServices(data.services);
         if (data.groups?.length > 0) setGroups(data.groups);
+        setTotalServices(data.total ?? data.services.length);
+        setActiveCount(data.activeCount ?? 0);
+        setInactiveCount(data.inactiveCount ?? 0);
+        if (data.pagination) {
+          setTotalPages(data.pagination.totalPages);
+        }
       }
     } catch {
     } finally {
       setLoading(false);
       setSelectedIds(new Set());
     }
-  }, [filterGroup, searchQuery]);
+  }, [filterGroup, searchQuery, currentPage, perPage]);
 
   useEffect(() => {
     let cancelled = false;
@@ -159,6 +176,10 @@ export default function AdminLayananPage() {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterGroup, searchQuery]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filterGroup, searchQuery, perPage]);
 
   async function handleSync() {
     setSyncing(true);
@@ -507,9 +528,9 @@ export default function AdminLayananPage() {
       </div>
 
       <div className="flex items-center gap-4 text-sm text-muted-foreground flex-wrap">
-        <span>Total: <strong className="text-foreground">{services.length}</strong> layanan</span>
-        <span>Aktif: <strong className="text-emerald-600 dark:text-emerald-400">{services.filter(s => s.is_active).length}</strong></span>
-        <span>Nonaktif: <strong className="text-red-500">{services.filter(s => !s.is_active).length}</strong></span>
+        <span>Total: <strong className="text-foreground">{totalServices}</strong> layanan</span>
+        <span>Aktif: <strong className="text-emerald-600 dark:text-emerald-400">{activeCount}</strong></span>
+        <span>Nonaktif: <strong className="text-red-500">{inactiveCount}</strong></span>
         {lastSyncedInfo && (
           <span className="ml-auto text-xs">
             <RefreshCw size={12} className="inline mr-1" />
@@ -790,6 +811,77 @@ export default function AdminLayananPage() {
           </table>
         </div>
       </div>
+
+      {/* Pagination */}
+      {totalPages > 0 && (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <span>Tampilkan</span>
+            <select
+              value={perPage}
+              onChange={(e) => setPerPage(Number(e.target.value))}
+              className="bg-card border border-border rounded-lg px-2 py-1 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-brand-primary/30"
+            >
+              <option value={10}>10</option>
+              <option value={25}>25</option>
+              <option value={50}>50</option>
+            </select>
+            <span>per halaman</span>
+          </div>
+
+          {totalPages > 1 && (
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage <= 1}
+                className="p-1.5 rounded-lg border border-border hover:bg-muted transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                <ChevronLeft size={16} className="text-muted-foreground" />
+              </button>
+              {Array.from({ length: totalPages }, (_, i) => i + 1)
+                .filter((p) => {
+                  if (totalPages <= 7) return true;
+                  if (p === 1 || p === totalPages) return true;
+                  if (Math.abs(p - currentPage) <= 1) return true;
+                  return false;
+                })
+                .reduce<(number | "...")[]>((acc, p, idx, arr) => {
+                  if (idx > 0 && p - (arr[idx - 1] as number) > 1) acc.push("...");
+                  acc.push(p);
+                  return acc;
+                }, [])
+                .map((p, idx) =>
+                  p === "..." ? (
+                    <span key={`dots-${idx}`} className="px-1 text-muted-foreground text-sm">…</span>
+                  ) : (
+                    <button
+                      key={p}
+                      onClick={() => setCurrentPage(p as number)}
+                      className={`min-w-[32px] h-8 rounded-lg text-sm font-medium transition-colors ${
+                        currentPage === p
+                          ? "gradient-brand text-white"
+                          : "border border-border hover:bg-muted text-muted-foreground"
+                      }`}
+                    >
+                      {p}
+                    </button>
+                  )
+                )}
+              <button
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                disabled={currentPage >= totalPages}
+                className="p-1.5 rounded-lg border border-border hover:bg-muted transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                <ChevronRight size={16} className="text-muted-foreground" />
+              </button>
+            </div>
+          )}
+
+          <span className="text-xs text-muted-foreground">
+            Halaman {currentPage} dari {totalPages}
+          </span>
+        </div>
+      )}
 
       <DeleteConfirmModal
         isOpen={!!confirmDelete}

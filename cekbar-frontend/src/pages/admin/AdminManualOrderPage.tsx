@@ -54,6 +54,7 @@ export default function AdminPesananManualPage() {
   const [search, setSearch] = useState("");
   const [activeTab, setActiveTab] = useState("PENDING");
   const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(20);
   const [pagination, setPagination] = useState({ total: 0, page: 1, limit: 20, totalPages: 1 });
   const [statusCounts, setStatusCounts] = useState<Record<string, number>>({});
   const [selectedOrder, setSelectedOrder] = useState<ManualOrder | null>(null);
@@ -65,19 +66,20 @@ export default function AdminPesananManualPage() {
       if (activeTab !== "ALL") params.set("status", activeTab);
       if (search) params.set("search", search);
       params.set("page", String(page));
+      params.set("limit", String(perPage));
 
       const res = await fetch(`/api/admin/orders/manual?${params}`, { cache: "no-store" });
       if (res.ok) {
         const data = await res.json();
         setOrders(data.orders ?? []);
-        setPagination(data.pagination ?? { total: 0, page: 1, limit: 20, totalPages: 1 });
+        setPagination(data.pagination ?? { total: 0, page: 1, limit: perPage, totalPages: 1 });
         setStatusCounts(data.statusCounts ?? {});
       }
     } catch {
     } finally {
       setLoading(false);
     }
-  }, [activeTab, search, page]);
+  }, [activeTab, search, page, perPage]);
 
   useEffect(() => { fetchOrders(); }, [fetchOrders]);
 
@@ -87,7 +89,7 @@ export default function AdminPesananManualPage() {
     return () => clearInterval(interval);
   }, [fetchOrders]);
 
-  useEffect(() => { setPage(1); }, [activeTab, search]);
+  useEffect(() => { setPage(1); }, [activeTab, search, perPage]);
 
   const totalAll = Object.values(statusCounts).reduce((a, b) => a + b, 0);
 
@@ -230,28 +232,71 @@ export default function AdminPesananManualPage() {
           </div>
         )}
 
-        {pagination.totalPages > 1 && (
-          <div className="flex items-center justify-between px-4 py-3 border-t border-border">
-            <p className="text-xs text-muted-foreground">
-              Halaman {pagination.page} dari {pagination.totalPages} ({pagination.total} total)
-            </p>
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                disabled={page === 1}
-                className="p-1.5 rounded-lg hover:bg-muted transition-colors text-muted-foreground disabled:opacity-40"
+        {pagination.totalPages > 0 && (
+          <div className="flex flex-col sm:flex-row items-center justify-between px-4 py-3 border-t border-border gap-3">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <span>Tampilkan</span>
+              <select
+                value={perPage}
+                onChange={(e) => setPerPage(Number(e.target.value))}
+                className="bg-card border border-border rounded-lg px-2 py-1 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-brand-primary/30"
               >
-                <ChevronLeft size={16} />
-              </button>
-              <span className="px-3 py-1 text-xs font-medium text-foreground bg-muted rounded-lg">{page}</span>
-              <button
-                onClick={() => setPage((p) => Math.min(pagination.totalPages, p + 1))}
-                disabled={page === pagination.totalPages}
-                className="p-1.5 rounded-lg hover:bg-muted transition-colors text-muted-foreground disabled:opacity-40"
-              >
-                <ChevronRight size={16} />
-              </button>
+                <option value={10}>10</option>
+                <option value={20}>20</option>
+                <option value={50}>50</option>
+              </select>
+              <span>per halaman</span>
             </div>
+            {pagination.totalPages > 1 && (
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={page <= 1}
+                  className="p-1.5 rounded-lg border border-border hover:bg-muted transition-colors text-muted-foreground disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  <ChevronLeft size={16} />
+                </button>
+                {Array.from({ length: pagination.totalPages }, (_, i) => i + 1)
+                  .filter((p) => {
+                    if (pagination.totalPages <= 7) return true;
+                    if (p === 1 || p === pagination.totalPages) return true;
+                    if (Math.abs(p - page) <= 1) return true;
+                    return false;
+                  })
+                  .reduce<(number | "...")[]>((acc, p, idx, arr) => {
+                    if (idx > 0 && p - (arr[idx - 1] as number) > 1) acc.push("...");
+                    acc.push(p);
+                    return acc;
+                  }, [])
+                  .map((p, idx) =>
+                    p === "..." ? (
+                      <span key={`dots-${idx}`} className="px-1 text-muted-foreground text-sm">…</span>
+                    ) : (
+                      <button
+                        key={p}
+                        onClick={() => setPage(p as number)}
+                        className={`min-w-[32px] h-8 rounded-lg text-sm font-medium transition-colors ${
+                          page === p
+                            ? "gradient-brand text-white"
+                            : "border border-border hover:bg-muted text-muted-foreground"
+                        }`}
+                      >
+                        {p}
+                      </button>
+                    )
+                  )}
+                <button
+                  onClick={() => setPage((p) => Math.min(pagination.totalPages, p + 1))}
+                  disabled={page >= pagination.totalPages}
+                  className="p-1.5 rounded-lg border border-border hover:bg-muted transition-colors text-muted-foreground disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  <ChevronRight size={16} />
+                </button>
+              </div>
+            )}
+            <span className="text-xs text-muted-foreground">
+              Halaman {pagination.page} dari {pagination.totalPages} ({pagination.total} total)
+            </span>
           </div>
         )}
       </div>

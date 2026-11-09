@@ -195,6 +195,9 @@ struct AdminOrdersQuery {
     payment_status: Option<String>,
     #[serde(rename = "orderStatus")]
     order_status: Option<String>,
+    search: Option<String>,
+    page: Option<u32>,
+    limit: Option<u32>,
 }
 
 async fn get_orders(
@@ -206,6 +209,10 @@ async fn get_orders(
         return Err(AppError::Forbidden);
     }
 
+    let page = q.page.unwrap_or(1).max(1);
+    let limit = q.limit.unwrap_or(10).min(100);
+    let offset = (page - 1) * limit;
+
     let mut conditions = Vec::new();
     let mut params: Vec<String> = Vec::new();
 
@@ -214,11 +221,33 @@ async fn get_orders(
         params.push(ps.clone());
     }
     if let Some(ref os) = q.order_status {
-        conditions.push("o.status = ?".to_string());
-        params.push(os.clone());
+        if os != "ALL" {
+            conditions.push("o.status = ?".to_string());
+            params.push(os.clone());
+        }
+    }
+    if let Some(ref s) = q.search {
+        if !s.is_empty() {
+            conditions.push("(o.order_id LIKE ? OR o.service_name LIKE ? OR u.username LIKE ? OR u.email LIKE ? OR o.ceir_order_id LIKE ?)".to_string());
+            let pat = format!("%{}%", s);
+            params.push(pat.clone());
+            params.push(pat.clone());
+            params.push(pat.clone());
+            params.push(pat.clone());
+            params.push(pat);
+        }
     }
 
     let where_clause = if conditions.is_empty() { String::new() } else { format!("WHERE {}", conditions.join(" AND ")) };
+
+    // Count total
+    let count_sql = format!(
+        "SELECT COUNT(*) FROM orders o JOIN users u ON u.id = o.user_id LEFT JOIN payments p ON p.order_id = o.order_id {}",
+        where_clause
+    );
+    let mut count_q = sqlx::query_as::<_, (i64,)>(&count_sql);
+    for p in &params { count_q = count_q.bind(p); }
+    let (total,) = count_q.fetch_one(&state.db).await?;
 
     let sql = format!(
         "SELECT o.order_id, o.service_name, CAST(o.imei_list AS CHAR) as imei_list, CAST(o.total_price AS CHAR) as total_price, \
@@ -228,14 +257,12 @@ async fn get_orders(
          p.payment_id, CAST(p.total_amount AS CHAR) as total_amount, p.status AS payment_status, \
          p.confirmed_at, p.payment_type, p.gopay_transaction_id \
          FROM orders o JOIN users u ON u.id = o.user_id LEFT JOIN payments p ON p.order_id = o.order_id \
-         {} ORDER BY o.created_at DESC LIMIT 200", where_clause
+         {} ORDER BY o.created_at DESC LIMIT ? OFFSET ?", where_clause
     );
 
-    // Build query dynamically
     let mut query = sqlx::query_as::<_, AdminOrderRow>(&sql);
-    for p in &params {
-        query = query.bind(p);
-    }
+    for p in &params { query = query.bind(p); }
+    query = query.bind(limit).bind(offset);
     let rows: Vec<AdminOrderRow> = query.fetch_all(&state.db).await?;
 
     let orders: Vec<serde_json::Value> = rows.iter().map(|r| {
@@ -256,7 +283,19 @@ async fn get_orders(
         })
     }).collect();
 
-    Ok(Json(json!({ "orders": orders })))
+    // Stats (unfiltered)
+    let stats_total: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM orders").fetch_one(&state.db).await?;
+    let stats_success: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM orders WHERE status = 'SUCCESS'").fetch_one(&state.db).await?;
+    let stats_pending: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM orders WHERE status IN ('PENDING','PROCESSING','PENDING_PAYMENT')").fetch_one(&state.db).await?;
+    let stats_failed: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM orders WHERE status = 'FAILED'").fetch_one(&state.db).await?;
+
+    let total_pages = ((total as f64) / (limit as f64)).ceil() as u32;
+
+    Ok(Json(json!({
+        "orders": orders,
+        "stats": { "total": stats_total.0, "success": stats_success.0, "pending": stats_pending.0, "failed": stats_failed.0 },
+        "pagination": { "total": total, "page": page, "limit": limit, "totalPages": total_pages },
+    })))
 }
 
 #[derive(sqlx::FromRow)]
@@ -512,6 +551,8 @@ struct ManualOrderRow {
 struct ServicesQuery {
     group: Option<String>,
     search: Option<String>,
+    page: Option<u32>,
+    limit: Option<u32>,
 }
 
 async fn get_services(
@@ -522,6 +563,10 @@ async fn get_services(
     if !is_admin(&user) {
         return Err(AppError::Forbidden);
     }
+
+    let page = q.page.unwrap_or(1).max(1);
+    let limit = q.limit.unwrap_or(10).min(100);
+    let offset = (page - 1) * limit;
 
     let mut conditions = Vec::new();
     let mut params: Vec<String> = Vec::new();
@@ -543,23 +588,30 @@ async fn get_services(
 
     let where_clause = if conditions.is_empty() { String::new() } else { format!("WHERE {}", conditions.join(" AND ")) };
 
+    // Count total
+    let count_sql = format!("SELECT COUNT(*) FROM services {}", where_clause);
+    let mut count_q = sqlx::query_as::<_, (i64,)>(&count_sql);
+    for p in &params { count_q = count_q.bind(p); }
+    let (total,) = count_q.fetch_one(&state.db).await?;
+
     let sql = format!(
         "SELECT id, service_id, service_name, group_name, category, api_provider, api_service_id, \
          CAST(buy_price AS CHAR) as buy_price, CAST(sell_price AS CHAR) as sell_price, \
          time_info, info, is_active, min_qty, max_qty, custom_field_name, custom_field_regex, \
          custom_field_maxlen, allow_bulk, api_type, last_synced_at, created_at, updated_at \
-         FROM services {} ORDER BY group_name ASC, service_name ASC", where_clause
+         FROM services {} ORDER BY group_name ASC, service_name ASC \
+         LIMIT ? OFFSET ?", where_clause
     );
 
     let mut query = sqlx::query_as::<_, ServiceRow>(&sql);
     for p in &params { query = query.bind(p); }
+    query = query.bind(limit).bind(offset);
     let rows: Vec<ServiceRow> = query.fetch_all(&state.db).await?;
 
     let groups: Vec<(String,)> = sqlx::query_as(
         "SELECT DISTINCT group_name FROM services ORDER BY group_name ASC"
     ).fetch_all(&state.db).await?;
 
-    let total = rows.len();
     let services: Vec<serde_json::Value> = rows.iter().map(|r| json!({
         "id": r.id, "service_id": r.service_id, "service_name": r.service_name,
         "group_name": r.group_name, "category": r.category,
@@ -573,10 +625,19 @@ async fn get_services(
         "api_type": r.api_type, "last_synced_at": r.last_synced_at,
     })).collect();
 
+    let total_pages = ((total as f64) / (limit as f64)).ceil() as u32;
+
+    // Active/inactive counts (unfiltered)
+    let active_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM services WHERE is_active = 1").fetch_one(&state.db).await?;
+    let inactive_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM services WHERE is_active = 0").fetch_one(&state.db).await?;
+
     Ok(Json(json!({
         "services": services,
         "groups": groups.iter().map(|g| &g.0).collect::<Vec<_>>(),
         "total": total,
+        "activeCount": active_count.0,
+        "inactiveCount": inactive_count.0,
+        "pagination": { "total": total, "page": page, "limit": limit, "totalPages": total_pages },
     })))
 }
 
@@ -1218,28 +1279,38 @@ async fn delete_user(
 
 // ── GET /admin/transactions ────────────────────────────────────────────
 
+#[derive(Deserialize)]
+struct TransactionsQuery {
+    page: Option<u32>,
+    limit: Option<u32>,
+    search: Option<String>,
+    #[serde(rename = "type")]
+    tx_type: Option<String>,
+}
+
 async fn get_transactions(
     State(state): State<Arc<AppState>>,
     user: CurrentUser,
+    Query(q): Query<TransactionsQuery>,
 ) -> AppResult<Json<serde_json::Value>> {
     if !is_admin(&user) {
         return Err(AppError::Forbidden);
     }
 
+    // Fetch all LUNAS payments for summary calculation
     let rows: Vec<TransactionRow> = sqlx::query_as(
         "SELECT p.payment_id, p.order_id, CAST(p.total_amount AS CHAR) as total_amount, p.payment_type, \
          p.confirmed_at, p.created_at, o.service_name, CAST(o.imei_list AS CHAR) as imei_list, CAST(s.buy_price AS CHAR) as buy_price \
          FROM payments p JOIN orders o ON o.order_id = p.order_id \
          JOIN services s ON s.service_id = o.service_id \
          WHERE p.status = 'LUNAS' \
-         ORDER BY COALESCE(p.confirmed_at, p.created_at) DESC LIMIT 100"
+         ORDER BY COALESCE(p.confirmed_at, p.created_at) DESC"
     ).fetch_all(&state.db).await?;
 
-    let mut transactions = Vec::new();
-    let mut idx = 0u32;
+    // Build all transactions with stable IDs based on payment_id
+    let mut all_transactions = Vec::new();
 
     for r in &rows {
-        idx += 1;
         let imei_count = r.imei_list.as_deref()
             .and_then(|s| serde_json::from_str::<Vec<String>>(s).ok())
             .map(|v| v.len())
@@ -1253,8 +1324,8 @@ async fn get_transactions(
 
         let imei_suffix = if imei_count > 1 { format!(" ({} IMEI)", imei_count) } else { String::new() };
 
-        transactions.push(json!({
-            "id": format!("TRX-{:03}", idx),
+        all_transactions.push(json!({
+            "id": format!("{}-IN", r.payment_id),
             "type": "IN",
             "description": format!("Pembayaran {} — {}{}", payment_type, r.service_name, imei_suffix),
             "relatedOrder": r.order_id,
@@ -1264,12 +1335,11 @@ async fn get_transactions(
 
         let seller_cost = buy_price * imei_count as f64;
         if seller_cost > 0.0 {
-            idx += 1;
             let cost_suffix = if imei_count > 1 {
                 format!(" ({} IMEI × {})", imei_count, buy_price as i64)
             } else { String::new() };
-            transactions.push(json!({
-                "id": format!("TRX-{:03}", idx),
+            all_transactions.push(json!({
+                "id": format!("{}-OUT", r.payment_id),
                 "type": "OUT",
                 "description": format!("Setoran ke Seller — {}{}", r.service_name, cost_suffix),
                 "relatedOrder": r.order_id,
@@ -1279,12 +1349,41 @@ async fn get_transactions(
         }
     }
 
-    let total_in: f64 = transactions.iter().filter(|t| t["type"] == "IN").map(|t| t["amount"].as_f64().unwrap_or(0.0)).sum();
-    let total_out: f64 = transactions.iter().filter(|t| t["type"] == "OUT").map(|t| t["amount"].as_f64().unwrap_or(0.0)).sum();
+    // Summary from all data
+    let total_in: f64 = all_transactions.iter().filter(|t| t["type"] == "IN").map(|t| t["amount"].as_f64().unwrap_or(0.0)).sum();
+    let total_out: f64 = all_transactions.iter().filter(|t| t["type"] == "OUT").map(|t| t["amount"].as_f64().unwrap_or(0.0)).sum();
+
+    // Filter
+    let filtered: Vec<&serde_json::Value> = all_transactions.iter().filter(|t| {
+        let match_type = match q.tx_type.as_deref() {
+            Some("IN") => t["type"] == "IN",
+            Some("OUT") => t["type"] == "OUT",
+            _ => true,
+        };
+        let match_search = match q.search.as_deref() {
+            Some(s) if !s.is_empty() => {
+                let sl = s.to_lowercase();
+                t["id"].as_str().map(|v| v.to_lowercase().contains(&sl)).unwrap_or(false)
+                    || t["description"].as_str().map(|v| v.to_lowercase().contains(&sl)).unwrap_or(false)
+                    || t["relatedOrder"].as_str().map(|v| v.to_lowercase().contains(&sl)).unwrap_or(false)
+            }
+            _ => true,
+        };
+        match_type && match_search
+    }).collect();
+
+    // Paginate
+    let page = q.page.unwrap_or(1).max(1);
+    let limit = q.limit.unwrap_or(20).min(100);
+    let total = filtered.len() as u32;
+    let total_pages = ((total as f64) / (limit as f64)).ceil() as u32;
+    let offset = ((page - 1) * limit) as usize;
+    let paged: Vec<&serde_json::Value> = filtered.into_iter().skip(offset).take(limit as usize).collect();
 
     Ok(Json(json!({
-        "transactions": transactions,
+        "transactions": paged,
         "summary": { "totalIn": total_in, "totalOut": total_out, "profit": total_in - total_out },
+        "pagination": { "total": total, "page": page, "limit": limit, "totalPages": total_pages },
     })))
 }
 

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { Search, Loader2, RefreshCw, Eye } from "lucide-react";
+import { Search, Loader2, RefreshCw, Eye, ChevronLeft, ChevronRight } from "lucide-react";
 import { formatRupiah, formatDate } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { statusConfig } from "@/lib/status-config";
@@ -42,42 +42,34 @@ export default function AdminPesananPage() {
   const [search, setSearch] = useState("");
   const [filterOrderStatus, setFilterOrderStatus] = useState("ALL");
   const [selectedOrder, setSelectedOrder] = useState<AdminOrder | null>(null);
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(10);
+  const [pagination, setPagination] = useState({ total: 0, page: 1, limit: 10, totalPages: 1 });
+  const [stats, setStats] = useState({ total: 0, success: 0, pending: 0, failed: 0 });
 
   const fetchOrders = useCallback(async () => {
     setLoading(true);
     try {
       const params = new URLSearchParams();
       if (filterOrderStatus !== "ALL") params.set("orderStatus", filterOrderStatus);
+      if (search) params.set("search", search);
+      params.set("page", String(page));
+      params.set("limit", String(perPage));
       const res = await fetch(`/api/admin/orders?${params}`, { cache: "no-store" });
       if (res.ok) {
         const data = await res.json();
         setOrders(data.orders ?? []);
+        setPagination(data.pagination ?? { total: 0, page: 1, limit: perPage, totalPages: 1 });
+        if (data.stats) setStats(data.stats);
       }
     } catch {
     } finally {
       setLoading(false);
     }
-  }, [filterOrderStatus]);
+  }, [filterOrderStatus, search, page, perPage]);
 
   useEffect(() => { fetchOrders(); }, [fetchOrders]);
-
-  const filtered = orders.filter((o) => {
-    const q = search.toLowerCase();
-    return (
-      o.orderId.toLowerCase().includes(q) ||
-      o.username.toLowerCase().includes(q) ||
-      o.serviceName.toLowerCase().includes(q) ||
-      o.email.toLowerCase().includes(q) ||
-      (o.ceirOrderId ?? "").toLowerCase().includes(q)
-    );
-  });
-
-  const stats = {
-    total: orders.length,
-    success: orders.filter((o) => o.orderStatus === "SUCCESS").length,
-    pending: orders.filter((o) => o.orderStatus === "PENDING" || o.orderStatus === "PROCESSING").length,
-    failed: orders.filter((o) => o.orderStatus === "FAILED").length,
-  };
+  useEffect(() => { setPage(1); }, [filterOrderStatus, search, perPage]);
 
   return (
     <div className="space-y-5 animate-fade-in">
@@ -133,7 +125,7 @@ export default function AdminPesananPage() {
           <div className="flex items-center justify-center py-16">
             <Loader2 size={24} className="animate-spin text-muted-foreground" />
           </div>
-        ) : filtered.length === 0 ? (
+        ) : orders.length === 0 ? (
           <div className="py-16 text-center text-muted-foreground text-sm">
             Tidak ada order ditemukan
           </div>
@@ -153,7 +145,7 @@ export default function AdminPesananPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {filtered.map((order) => {
+                {orders.map((order) => {
                   const os = statusConfig[order.orderStatus] ?? statusConfig.PENDING;
                   const ps = order.paymentStatus ? (paymentStatusConfig[order.paymentStatus] ?? paymentStatusConfig.MENUNGGU) : null;
 
@@ -213,6 +205,77 @@ export default function AdminPesananPage() {
           </div>
         )}
       </div>
+
+      {/* Pagination */}
+      {pagination.totalPages > 0 && (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <span>Tampilkan</span>
+            <select
+              value={perPage}
+              onChange={(e) => setPerPage(Number(e.target.value))}
+              className="bg-card border border-border rounded-lg px-2 py-1 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-brand-primary/30"
+            >
+              <option value={10}>10</option>
+              <option value={25}>25</option>
+              <option value={50}>50</option>
+            </select>
+            <span>per halaman</span>
+          </div>
+
+          {pagination.totalPages > 1 && (
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page <= 1}
+                className="p-1.5 rounded-lg border border-border hover:bg-muted transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                <ChevronLeft size={16} className="text-muted-foreground" />
+              </button>
+              {Array.from({ length: pagination.totalPages }, (_, i) => i + 1)
+                .filter((p) => {
+                  if (pagination.totalPages <= 7) return true;
+                  if (p === 1 || p === pagination.totalPages) return true;
+                  if (Math.abs(p - page) <= 1) return true;
+                  return false;
+                })
+                .reduce<(number | "...")[]>((acc, p, idx, arr) => {
+                  if (idx > 0 && p - (arr[idx - 1] as number) > 1) acc.push("...");
+                  acc.push(p);
+                  return acc;
+                }, [])
+                .map((p, idx) =>
+                  p === "..." ? (
+                    <span key={`dots-${idx}`} className="px-1 text-muted-foreground text-sm">…</span>
+                  ) : (
+                    <button
+                      key={p}
+                      onClick={() => setPage(p as number)}
+                      className={`min-w-[32px] h-8 rounded-lg text-sm font-medium transition-colors ${
+                        page === p
+                          ? "gradient-brand text-white"
+                          : "border border-border hover:bg-muted text-muted-foreground"
+                      }`}
+                    >
+                      {p}
+                    </button>
+                  )
+                )}
+              <button
+                onClick={() => setPage((p) => Math.min(pagination.totalPages, p + 1))}
+                disabled={page >= pagination.totalPages}
+                className="p-1.5 rounded-lg border border-border hover:bg-muted transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                <ChevronRight size={16} className="text-muted-foreground" />
+              </button>
+            </div>
+          )}
+
+          <span className="text-xs text-muted-foreground">
+            Halaman {pagination.page} dari {pagination.totalPages}
+          </span>
+        </div>
+      )}
 
       {selectedOrder && typeof document !== "undefined" && (
         <AdminDetailModal order={selectedOrder} onClose={() => setSelectedOrder(null)} />

@@ -13,6 +13,8 @@ import {
   User,
   Loader2,
   AlertTriangle,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 
 type UserRole = "superadmin" | "admin" | "reseller" | "user";
@@ -48,6 +50,11 @@ export default function AdminUsersPage() {
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
   const [callerRole, setCallerRole] = useState<UserRole>("admin");
 
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalUsers, setTotalUsers] = useState(0);
+  const [perPage, setPerPage] = useState(10);
+
   useEffect(() => {
     if (!actionMenuId) return;
     const handler = (e: MouseEvent) => {
@@ -80,12 +87,18 @@ export default function AdminUsersPage() {
       const params = new URLSearchParams();
       if (filterRole !== "ALL") params.set("role", filterRole);
       if (searchQuery) params.set("search", searchQuery);
+      params.set("page", String(currentPage));
+      params.set("limit", String(perPage));
 
       const res = await fetch(`/api/admin/users?${params.toString()}`);
       const data = await res.json();
 
       if (res.ok) {
         setUsers(data.users);
+        setTotalUsers(data.total ?? data.users.length);
+        if (data.pagination) {
+          setTotalPages(data.pagination.totalPages);
+        }
       } else {
         setError(data.error || "Gagal memuat data pengguna");
       }
@@ -94,11 +107,15 @@ export default function AdminUsersPage() {
     } finally {
       setLoading(false);
     }
-  }, [filterRole, searchQuery]);
+  }, [filterRole, searchQuery, currentPage, perPage]);
 
   useEffect(() => {
     fetchUsers();
   }, [fetchUsers]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filterRole, searchQuery, perPage]);
 
   function openAdd() {
     setEditingUser(null);
@@ -265,7 +282,7 @@ export default function AdminUsersPage() {
       </div>
 
       <div className="flex items-center gap-4 text-sm text-muted-foreground flex-wrap">
-        <span>Total: <strong className="text-foreground">{users.length}</strong> pengguna</span>
+        <span>Total: <strong className="text-foreground">{totalUsers}</strong> pengguna</span>
         <span>Aktif: <strong className="text-emerald-600 dark:text-emerald-400">{users.filter(u => u.status === "active").length}</strong></span>
         <span>Nonaktif: <strong className="text-red-500">{users.filter(u => u.status === "inactive").length}</strong></span>
       </div>
@@ -414,6 +431,77 @@ export default function AdminUsersPage() {
           </table>
         </div>
       </div>
+
+      {/* Pagination */}
+      {totalPages > 0 && (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <span>Tampilkan</span>
+            <select
+              value={perPage}
+              onChange={(e) => setPerPage(Number(e.target.value))}
+              className="bg-card border border-border rounded-lg px-2 py-1 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-brand-primary/30"
+            >
+              <option value={10}>10</option>
+              <option value={25}>25</option>
+              <option value={50}>50</option>
+            </select>
+            <span>per halaman</span>
+          </div>
+
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={currentPage <= 1}
+              className="p-1.5 rounded-lg border border-border hover:bg-muted transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              <ChevronLeft size={16} className="text-muted-foreground" />
+            </button>
+
+            {Array.from({ length: totalPages }, (_, i) => i + 1)
+              .filter((p) => {
+                if (totalPages <= 7) return true;
+                if (p === 1 || p === totalPages) return true;
+                if (Math.abs(p - currentPage) <= 1) return true;
+                return false;
+              })
+              .reduce<(number | "...")[]>((acc, p, idx, arr) => {
+                if (idx > 0 && p - (arr[idx - 1] as number) > 1) acc.push("...");
+                acc.push(p);
+                return acc;
+              }, [])
+              .map((p, idx) =>
+                p === "..." ? (
+                  <span key={`dots-${idx}`} className="px-1 text-muted-foreground text-sm">…</span>
+                ) : (
+                  <button
+                    key={p}
+                    onClick={() => setCurrentPage(p as number)}
+                    className={`min-w-[32px] h-8 rounded-lg text-sm font-medium transition-colors ${
+                      currentPage === p
+                        ? "gradient-brand text-white"
+                        : "border border-border hover:bg-muted text-muted-foreground"
+                    }`}
+                  >
+                    {p}
+                  </button>
+                )
+              )}
+
+            <button
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              disabled={currentPage >= totalPages}
+              className="p-1.5 rounded-lg border border-border hover:bg-muted transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              <ChevronRight size={16} className="text-muted-foreground" />
+            </button>
+          </div>
+
+          <span className="text-xs text-muted-foreground">
+            Halaman {currentPage} dari {totalPages}
+          </span>
+        </div>
+      )}
 
       {showModal && typeof document !== "undefined" && createPortal(
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">

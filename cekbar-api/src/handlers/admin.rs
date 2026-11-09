@@ -928,6 +928,8 @@ async fn batch_delete_services(
 struct UsersQuery {
     role: Option<String>,
     search: Option<String>,
+    page: Option<u32>,
+    limit: Option<u32>,
 }
 
 async fn get_users(
@@ -938,6 +940,10 @@ async fn get_users(
     if !is_admin(&user) {
         return Err(AppError::Forbidden);
     }
+
+    let page = q.page.unwrap_or(1).max(1);
+    let limit = q.limit.unwrap_or(10).min(100);
+    let offset = (page - 1) * limit;
 
     let mut conditions = Vec::new();
     let mut params: Vec<String> = Vec::new();
@@ -959,16 +965,23 @@ async fn get_users(
 
     let where_clause = if conditions.is_empty() { String::new() } else { format!("WHERE {}", conditions.join(" AND ")) };
 
+    // Count total
+    let count_sql = format!("SELECT COUNT(*) FROM users {}", where_clause);
+    let mut count_q = sqlx::query_as::<_, (i64,)>(&count_sql);
+    for p in &params { count_q = count_q.bind(p); }
+    let (total,) = count_q.fetch_one(&state.db).await?;
+
     let sql = format!(
         "SELECT id, nama, username, email, no_hp, role, status, last_login_at, created_at, updated_at \
-         FROM users {} ORDER BY FIELD(role, 'superadmin', 'admin', 'reseller', 'user'), created_at ASC", where_clause
+         FROM users {} ORDER BY FIELD(role, 'superadmin', 'admin', 'reseller', 'user'), created_at DESC \
+         LIMIT ? OFFSET ?", where_clause
     );
 
     let mut query = sqlx::query_as::<_, UserRow>(&sql);
     for p in &params { query = query.bind(p); }
+    query = query.bind(limit).bind(offset);
     let rows: Vec<UserRow> = query.fetch_all(&state.db).await?;
 
-    let total = rows.len();
     let users: Vec<serde_json::Value> = rows.iter().map(|r| json!({
         "id": r.id, "nama": r.nama, "username": r.username, "email": r.email,
         "no_hp": r.no_hp, "role": r.role, "status": r.status,
@@ -977,7 +990,13 @@ async fn get_users(
         "updated_at": r.updated_at.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string(),
     })).collect();
 
-    Ok(Json(json!({ "users": users, "total": total })))
+    let total_pages = ((total as f64) / (limit as f64)).ceil() as u32;
+
+    Ok(Json(json!({
+        "users": users,
+        "total": total,
+        "pagination": { "total": total, "page": page, "limit": limit, "totalPages": total_pages }
+    })))
 }
 
 #[derive(sqlx::FromRow)]

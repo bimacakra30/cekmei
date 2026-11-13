@@ -4,11 +4,11 @@ FROM rust:latest AS builder
 WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
 # Cache deps
-RUN mkdir src && echo "fn main(){}" > src/main.rs && cargo build --release && rm -rf src target/release/cekbar-api target/release/deps/cekbar_api*
+RUN mkdir src && echo "fn main(){}" > src/main.rs && cargo build --release && rm -rf src target/release/cekbar-api target/release/deps/cekbar* target/release/.fingerprint/cekbar*
 
 COPY src ./src
 COPY migrations ./migrations
-RUN cargo build --release
+RUN touch src/main.rs && cargo build --release
 
 # ── Runtime stage ───────────────────────────────────────────────────
 FROM debian:bookworm-slim

@@ -287,7 +287,7 @@ async fn me(
         .unwrap_or((0,));
 
         let ceir_balance = match state.ceirid.get_balance().await {
-            Ok(b) => b.get("credit").and_then(|v| v.as_f64()),
+            Ok(b) => crate::services::ceirid_client::extract_credit(&b),
             Err(_) => None,
         };
 

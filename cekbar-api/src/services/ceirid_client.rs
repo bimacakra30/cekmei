@@ -172,3 +172,13 @@ pub fn flatten_services(data: &serde_json::Value) -> Vec<FlatService> {
 
     result
 }
+
+/// Extract the credit balance from CEIRID `/balance` responses (`data.credit` or top-level `credit`).
+pub fn extract_credit(balance: &serde_json::Value) -> Option<f64> {
+    let val = balance
+        .get("data")
+        .and_then(|d| d.get("credit"))
+        .or_else(|| balance.get("credit"))?;
+    val.as_f64()
+        .or_else(|| val.as_str().and_then(|s| s.parse::<f64>().ok()))
+}

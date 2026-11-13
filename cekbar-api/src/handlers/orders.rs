@@ -81,19 +81,17 @@ async fn create(
         let total_buy = imei_count * buy_price;
         match state.ceirid.get_balance().await {
             Ok(balance) => {
-                let credit = balance.get("credit").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                let credit = crate::services::ceirid_client::extract_credit(&balance).unwrap_or(0.0);
                 if credit < total_buy {
-                    return Ok(Json(json!({
-                        "error": "Layanan sedang tidak tersedia untuk saat ini. Silakan hubungi admin.",
-                        "errorCode": "INSUFFICIENT_PROVIDER_BALANCE"
-                    })));
+                    return Err(AppError::BadRequest(
+                        "Layanan sedang tidak tersedia untuk saat ini. Silakan hubungi admin.".into(),
+                    ));
                 }
             }
             Err(_) => {
-                return Ok(Json(json!({
-                    "error": "Tidak dapat memverifikasi ketersediaan layanan. Silakan coba beberapa saat lagi.",
-                    "errorCode": "PROVIDER_UNAVAILABLE"
-                })));
+                return Err(AppError::BadRequest(
+                    "Tidak dapat memverifikasi ketersediaan layanan. Silakan coba beberapa saat lagi.".into(),
+                ));
             }
         }
     }

@@ -76,6 +76,12 @@ export async function placeOrder(params: {
 
   const data = await res.json();
 
+  if (data.error) {
+    const error = new Error(data.error) as Error & { errorCode?: string };
+    error.errorCode = data.errorCode;
+    throw error;
+  }
+
   // Direct order (reseller) — different response shape
   if (data.isDirectOrder) {
     return {
